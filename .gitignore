@@ -1,0 +1,22 @@
+# Build artifacts
+adoc
+adoc.exe
+adoc_rocksdb
+*.o
+*.obj
+*.exe
+*.out
+
+# CMake / build dirs
+build/
+rocksdb_adoc/build/
+CMakeCache.txt
+CMakeFiles/
+
+# Databases created by the real run
+/tmp/adoc*/
+
+# Windows / editor junk
+*:Zone.Identifier
+.vscode/
+*.swp
