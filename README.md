@@ -127,21 +127,3 @@ ADOC eliminated the write stalls (15.63 s → 0 s). Throughput is close and nois
 on a fast disk; for a report, run each config 3× and average (as the paper does).
 
 ---
-
-## Which part am I looking at?
-
-- `#include <rocksdb/...>` in a file → **real** integration. No RocksDB include →
-  **simulation**.
-- Build links `-lrocksdb` (CMake) → real. Plain `g++` with no library → simulation.
-- Program banner says `control-loop simulation (synthetic ...)` → simulation;
-  `ADOC on RocksDB | db=...` → real.
-
----
-
-## Notes
-- This is an independent reproduction for study; not affiliated with the original
-  authors.
-- The simulation's device bandwidths and the demo RDO threshold are illustrative,
-  not a performance benchmark. Paper-faithful numbers require the real integration
-  on the paper's hardware/workload.
-```
