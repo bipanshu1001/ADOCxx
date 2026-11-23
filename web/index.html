@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ADOC — Automatic Data Overflow Control</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="hero">
+  <div class="aurora"></div>
+  <div class="dots" id="heroDots"></div>
+  <div class="wrap">
+    <div class="tag">USENIX FAST '23 · C++ Reproduction</div>
+    <h1 class="glow">ADOC</h1>
+    <p class="sub">Automatically Harmonizing Dataflow Between Components in
+       Log-Structured Key-Value Stores — a tuner that erases RocksDB
+       <strong>write stalls</strong> in real time.</p>
+    <div class="links">
+      <a class="btn primary" href="#sim">▶ Launch live simulator</a>
+      <a class="btn" href="https://github.com/bipanshu1001/ADOCxx" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn" href="https://www.usenix.org/conference/fast23/presentation/yu" target="_blank" rel="noopener">Paper</a>
+    </div>
+  </div>
+  <div class="scroll-hint">scroll ↓</div>
+</header>
+
+<main class="wrap">
+
+  <section>
+    <h2><span class="num">01</span> The problem: write stalls</h2>
+    <p class="lead">LSM-tree key-value stores buffer writes in memory, then
+      <em>flush</em> and <em>compact</em> them to disk in the background. Under
+      heavy write pressure one stage falls behind, a component overflows, and the
+      database <strong>stops accepting writes</strong> — throughput collapses from
+      hundreds of thousands of ops/sec to near zero. That freeze is a
+      <strong>write stall</strong>.</p>
+  </section>
+
+  <section>
+    <h2><span class="num">02</span> How ADOC works</h2>
+    <p class="lead">Every <strong>1&nbsp;second</strong> ADOC detects which
+      component is overflowing and retunes two knobs — <strong>thread count</strong>
+      and <strong>batch size</strong> — using <strong>AIMD</strong> (the probe-up /
+      back-off-fast idea from TCP). One overflow is handled per window, priority
+      <strong>L0O&nbsp;&gt;&nbsp;RDO&nbsp;&gt;&nbsp;MMO</strong>.</p>
+
+    <div class="cards">
+      <div class="card mmo">
+        <div class="chip">MMO</div><h3>Memory Overflow</h3>
+        <p>Active MemTable fills before the previous one flushes — flush can't keep up.</p>
+        <div class="action">↓ fewer threads · ↑ bigger batch</div>
+      </div>
+      <div class="card l0o">
+        <div class="chip">L0O</div><h3>Level-0 Overflow</h3>
+        <p>Too many Level-0 files (&gt;20) — L0→L1 compaction lags the flush rate.</p>
+        <div class="action">↑ more threads · batch unchanged</div>
+      </div>
+      <div class="card rdo">
+        <div class="chip">RDO</div><h3>Redundancy Overflow</h3>
+        <p>Too many pending-compaction bytes (&gt;64 GB) — deep compaction lags.</p>
+        <div class="action">↑ more threads · ↓ smaller batch</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="sim">
+    <h2><span class="num">03</span> Live simulator</h2>
+    <p class="lead">A JavaScript port of the real tuner driving a synthetic LSM
+      engine. Watch data flow through the pipeline; components
+      <strong>glow red/orange/purple when they overflow</strong>, and the tuner
+      retunes to calm them. Toggle <strong>ADOC off</strong> to watch stalls pile
+      up. <span class="muted">Illustrative model — not a RocksDB benchmark.</span></p>
+
+    <div class="sim">
+      <div class="controls">
+        <label>Device
+          <select id="device">
+            <option value="210">SATA-HDD · 210 MB/s</option>
+            <option value="490" selected>SATA-SSD · 490 MB/s</option>
+            <option value="2700">NVMe-SSD · 2700 MB/s</option>
+          </select>
+        </label>
+        <label>Write pressure <span id="pressureVal">95%</span>
+          <input type="range" id="pressure" min="70" max="170" value="95" />
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="adoc" checked />
+          <span class="slider"></span> ADOC tuner
+        </label>
+        <div class="btns">
+          <button id="startBtn" class="btn primary">Pause</button>
+          <button id="resetBtn" class="btn">Reset</button>
+        </div>
+      </div>
+
+      <!-- ANIMATED PIPELINE -->
+      <div class="pipeline">
+        <div class="stage src">
+          <div class="stage-label">Incoming writes</div>
+          <div class="pulse-ring"></div>
+          <div class="ico">✎</div>
+        </div>
+
+        <div class="flow" id="flowIn"><span class="packet"></span></div>
+
+        <div class="stage" id="memStage">
+          <div class="stage-label">Memory<small>Active + Immutable MemTable</small></div>
+          <div class="fill mem" id="memFill"></div>
+          <div class="badge mmo" id="mmoBadge">MMO</div>
+        </div>
+
+        <div class="flow" id="flowFlush"><span class="flabel">flush</span><span class="packet"></span></div>
+
+        <div class="stage" id="l0Stage">
+          <div class="stage-label">Level 0<small><span id="l0count">0</span> SST files</small></div>
+          <div class="fill l0" id="l0Fill"></div>
+          <div class="badge l0o" id="l0oBadge">L0O</div>
+        </div>
+
+        <div class="flow" id="flowComp"><span class="flabel">compaction</span><span class="packet"></span></div>
+
+        <div class="stage" id="deepStage">
+          <div class="stage-label">Deep levels<small>pending / redundant</small></div>
+          <div class="fill deep" id="redunFill"></div>
+          <div class="badge rdo" id="rdoBadge">RDO</div>
+        </div>
+      </div>
+
+      <!-- KNOBS -->
+      <div class="knobs">
+        <div class="knob">
+          <div class="knob-head"><span>Threads</span><b id="kThreads">2</b></div>
+          <div class="workers" id="workers"></div>
+          <div class="knob-sub"><i class="dot flush"></i> flush <i class="dot comp"></i> compaction</div>
+        </div>
+        <div class="knob">
+          <div class="knob-head"><span>Batch size</span><b id="kBatch">64 MB</b></div>
+          <div class="batch-track"><div class="batch-block" id="batchBlock"></div></div>
+          <div class="knob-sub">64 MB ———————————— 512 MB</div>
+        </div>
+        <div class="knob action-knob" id="actionKnob">
+          <div class="knob-head"><span>Last action</span></div>
+          <div class="action-big" id="tAction">None</div>
+          <div class="knob-sub" id="actionDesc">waiting for overflow…</div>
+        </div>
+      </div>
+
+      <canvas id="chart" width="900" height="260"></canvas>
+      <div class="legend">
+        <span><i class="sw thru"></i> accepted throughput</span>
+        <span><i class="sw demand"></i> write demand</span>
+        <span><i class="sw stall"></i> stall</span>
+        <span><i class="sw mmo"></i> MMO</span>
+        <span><i class="sw l0o"></i> L0O</span>
+        <span><i class="sw rdo"></i> RDO</span>
+      </div>
+
+      <div class="tiles summary">
+        <div class="tile big"><span class="k">Avg throughput</span><span class="v" id="tAvg">— kOps/s</span></div>
+        <div class="tile big"><span class="k">Time in stall</span><span class="v" id="tStall">0 s</span></div>
+        <div class="tile big"><span class="k">Elapsed</span><span class="v" id="tTime">0 s</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">04</span> Measured on real RocksDB 9.11</h2>
+    <p class="lead">The same tuner wired into a real RocksDB, 60&nbsp;s, 4 writer
+      threads. Measured numbers, not the model:</p>
+    <div class="results">
+      <div class="res adoc-on">
+        <div class="chip">ADOC ON</div>
+        <div class="num2">0.00 s</div>
+        <div class="desc">time in write stalls</div>
+        <div class="foot">~138 kOps/s · stable across runs</div>
+      </div>
+      <div class="res adoc-off">
+        <div class="chip">Baseline</div>
+        <div class="num2">15–19 s</div>
+        <div class="desc">frozen ~¼–⅓ of the run</div>
+        <div class="foot">~133–163 kOps/s · swings run-to-run</div>
+      </div>
+    </div>
+    <p class="muted small">ADOC's core claim reproduced: write stalls eliminated.
+      Throughput is comparable and noisy on a fast disk; the paper's throughput
+      gains appear most on slower, stall-dominated devices.</p>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Independent C++ reproduction of ADOC (Yu, Noh, Choi, Xue — USENIX FAST 2023).
+       Built for study; not affiliated with the authors.</p>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
