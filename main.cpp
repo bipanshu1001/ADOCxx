@@ -93,6 +93,69 @@ static int run_simulation() {
     return 0;
 }
 
+// ---- JSON export: emit the real backend's run data for the web frontend ----
+static void emit_json_profile(const Profile& prof, bool last) {
+    EngineParams ep; ep.device_bw = prof.device_bw;
+    MetricsCollector collector(ep);
+    TunerConfig tcfg; tcfg.rdo_bytes_threshold = 8ULL * GB;
+    AdocTuner tuner(TuningKnobs{}, tcfg);
+    StallListener listener({20, tcfg.rdo_bytes_threshold});
+    WorkloadConfig wc; wc.name = "fillrandom"; wc.input_rate = prof.input_rate; wc.windows = 200;
+    Workload workload(wc);
+    const double tw = tcfg.tw_seconds;
+
+    std::printf("    {\n");
+    std::printf("      \"name\": \"%s\",\n", prof.name);
+    std::printf("      \"device_mbps\": %.0f,\n", prof.device_bw / MBf);
+    std::printf("      \"input_mbps\": %.0f,\n", prof.input_rate / MBf);
+    std::printf("      \"trace\": [\n");
+    for (int t = 0; t < workload.windows(); ++t) {
+        TuningKnobs k = tuner.knobs();
+        double in_bytes = workload.input_bytes(t, tw);
+        double in_rate = in_bytes / tw;
+        Metrics m = collector.collect(k, in_bytes, tw);
+        StallType st = listener.on_window(m.state, tw);
+        tuner.tune(m.state);
+        Overflow act = tuner.last_action();
+        bool mmo = m.state.active_memtable_full_before_flush;
+        double thru = (mmo ? m.flush_rate : in_rate) / MBf;
+        std::printf("        {\"t\":%d,\"threads\":%d,\"flush\":%d,\"comp\":%d,\"batch_mb\":%.0f,"
+                    "\"mem_mb\":%.0f,\"l0\":%d,\"redun_gb\":%.2f,\"thru_kops\":%.0f,"
+                    "\"act\":\"%s\",\"stall\":\"%s\"}%s\n",
+                    t, k.total_threads, k.flush_threads, k.compaction_threads(),
+                    k.batch_size / MBf, m.buffered_bytes / MBf, m.state.num_l0_files,
+                    m.state.redundant_data_bytes / GBf, thru,
+                    to_string(act), to_string(st),
+                    (t + 1 < workload.windows()) ? "," : "");
+    }
+    const StallStats& ss = listener.stats();
+    TuningKnobs f = tuner.knobs();
+    std::printf("      ],\n");
+    std::printf("      \"final\": {\"threads\":%d,\"flush\":%d,\"comp\":%d,\"batch_mb\":%.0f},\n",
+                f.total_threads, f.flush_threads, f.compaction_threads(), f.batch_size / MBf);
+    std::printf("      \"stalls\": {\"mt\":%d,\"l0\":%d,\"ps\":%d,\"total\":%d,\"total_sec\":%.0f}\n",
+                ss.mt_count, ss.l0_count, ss.ps_count, ss.total_count(), ss.total_sec());
+    std::printf("    }%s\n", last ? "" : ",");
+}
+
+static int run_json() {
+    Profile profiles[] = {
+        { "SATA-HDD", 210.0  * MBf, 260.0  * MBf },
+        { "SATA-SSD", 490.0  * MBf, 520.0  * MBf },
+        { "NVMe-SSD", 2700.0 * MBf, 2900.0 * MBf },
+    };
+    std::printf("{\n");
+    std::printf("  \"generated_by\": \"adoc.exe --json (compiled C++ ADOC backend)\",\n");
+    std::printf("  \"note\": \"Synthetic LSM dataflow model driven by the real ADOC tuner.\",\n");
+    std::printf("  \"rocksdb_measured\": {\"adoc_stall_s\":0.0,\"adoc_kops\":138,"
+                "\"baseline_stall_s\":15.6,\"baseline_kops\":133},\n");
+    std::printf("  \"devices\": [\n");
+    const int n = 3;
+    for (int i = 0; i < n; ++i) emit_json_profile(profiles[i], i == n - 1);
+    std::printf("  ]\n}\n");
+    return 0;
+}
+
 static int g_pass = 0, g_fail = 0;
 static void check(bool cond, const std::string& name) {
     if (cond) { ++g_pass; std::printf("  [PASS] %s\n", name.c_str()); }
@@ -191,5 +254,6 @@ static int run_tests() {
 
 int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--test") == 0) return run_tests();
+    if (argc > 1 && std::strcmp(argv[1], "--json") == 0) return run_json();
     return run_simulation();
 }

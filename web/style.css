@@ -188,6 +188,18 @@ canvas { width: 100%; height: auto; display: block; background: #090d14; border:
 .res .num2 { font-size: 44px; font-weight: 800; letter-spacing: -.02em; }
 .res .desc { color: var(--muted); } .res .foot { margin-top: 8px; font-size: 13px; color: var(--muted); }
 
+/* ---------- BACKEND-CONNECTED PANEL ---------- */
+code { background: var(--bg3); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+.be-status { font-weight: 700; }
+.be-status.ok { color: var(--ok); }
+.be-status.err { color: var(--l0o); }
+.be-tabs { display: flex; gap: 8px; margin: 18px 0 12px; flex-wrap: wrap; }
+.be-tab { background: var(--bg3); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 8px; padding: 8px 16px; cursor: pointer; font-weight: 600; font-size: 13px; transition: .15s; }
+.be-tab:hover { border-color: var(--accent); }
+.be-tab.active { background: var(--accent); border-color: var(--accent); color: #06121f; }
+#beSrc { font-size: 14px; }
+
 footer { padding: 30px 0; color: var(--muted); font-size: 13px; text-align: center; }
 
 @media (max-width: 760px) {

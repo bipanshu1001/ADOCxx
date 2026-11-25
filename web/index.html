@@ -165,8 +165,30 @@
     </div>
   </section>
 
+  <section id="backend">
+    <h2><span class="num">04</span> Backend-connected output</h2>
+    <p class="lead">This panel is <strong>not</strong> the JavaScript model — it
+      fetches <code>data/backend_run.json</code>, the real output of the compiled
+      C++ backend (<code>adoc.exe --json</code>), and replays the actual recorded
+      run. <span id="beStatus" class="be-status">connecting…</span></p>
+
+    <div class="be-tabs" id="beTabs"></div>
+    <canvas id="beChart" width="900" height="220"></canvas>
+    <div class="legend">
+      <span><i class="sw thru"></i> recorded throughput</span>
+      <span><i class="sw demand"></i> write demand</span>
+      <span><i class="sw stall"></i> stall window</span>
+    </div>
+    <div class="tiles summary">
+      <div class="tile big"><span class="k">Final config (C++)</span><span class="v" id="beFinal">—</span></div>
+      <div class="tile big"><span class="k">Total stall (C++)</span><span class="v" id="beStall">—</span></div>
+      <div class="tile big"><span class="k">Data source</span><span class="v" id="beSrc">backend_run.json</span></div>
+    </div>
+    <p class="muted small" id="beMeasured"></p>
+  </section>
+
   <section>
-    <h2><span class="num">04</span> Measured on real RocksDB 9.11</h2>
+    <h2><span class="num">05</span> Measured on real RocksDB 9.11</h2>
     <p class="lead">The same tuner wired into a real RocksDB, 60&nbsp;s, 4 writer
       threads. Measured numbers, not the model:</p>
     <div class="results">

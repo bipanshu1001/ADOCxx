@@ -175,3 +175,63 @@ resetSim();
 draw(parseFloat(deviceSel.value) * 1.7);
 paint();
 setInterval(tick, 130);
+
+/* ===== Backend-connected panel: fetch + replay the REAL C++ output ===== */
+(function backend() {
+  const statusEl = el("beStatus"), tabsEl = el("beTabs"), beCanvas = el("beChart");
+  if (!beCanvas) return;
+  const bctx = beCanvas.getContext("2d");
+  const BW2 = beCanvas.width, BH2 = beCanvas.height, P2 = 8;
+  let data = null, sel = 1;
+
+  fetch("data/backend_run.json", { cache: "no-store" })
+    .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then((d) => { data = d; onLoad(); })
+    .catch(() => {
+      statusEl.textContent = "⚠ couldn't load backend_run.json — view the deployed/served site (fetch is blocked on file://)";
+      statusEl.classList.add("err");
+    });
+
+  function onLoad() {
+    statusEl.textContent = "✓ connected — " + data.generated_by;
+    statusEl.classList.add("ok");
+    const m = data.rocksdb_measured;
+    el("beMeasured").textContent =
+      "Real RocksDB (measured): ADOC " + m.adoc_stall_s + " s stall / " + m.adoc_kops +
+      " kOps/s · baseline " + m.baseline_stall_s + " s / " + m.baseline_kops + " kOps/s.";
+    tabsEl.innerHTML = "";
+    data.devices.forEach((dev, i) => {
+      const b = document.createElement("button");
+      b.className = "be-tab" + (i === sel ? " active" : "");
+      b.textContent = dev.name;
+      b.onclick = () => { sel = i; [...tabsEl.children].forEach((c) => c.classList.remove("active")); b.classList.add("active"); render(); };
+      tabsEl.appendChild(b);
+    });
+    render();
+  }
+
+  function render() {
+    const dev = data.devices[sel], tr = dev.trace;
+    const plotH = BH2 - P2 * 2, yMax = dev.device_mbps * 1.7;
+    const stepX = (BW2 - P2 * 2) / (tr.length - 1);
+    const y = (v) => P2 + plotH * (1 - Math.min(1, v / yMax));
+    bctx.clearRect(0, 0, BW2, BH2);
+    bctx.strokeStyle = "#1a2230"; bctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) { const gy = P2 + plotH * i / 4; bctx.beginPath(); bctx.moveTo(P2, gy); bctx.lineTo(BW2 - P2, gy); bctx.stroke(); }
+    bctx.fillStyle = "rgba(255,107,107,.13)";
+    tr.forEach((p, i) => { if (p.stall !== "None") bctx.fillRect(P2 + i * stepX - stepX / 2, P2, stepX, plotH); });
+    bctx.strokeStyle = "rgba(148,163,180,.55)"; bctx.setLineDash([4, 4]); bctx.beginPath();
+    bctx.moveTo(P2, y(dev.input_mbps)); bctx.lineTo(BW2 - P2, y(dev.input_mbps)); bctx.stroke(); bctx.setLineDash([]);
+    const grad = bctx.createLinearGradient(0, P2, 0, P2 + plotH);
+    grad.addColorStop(0, "rgba(78,161,255,.3)"); grad.addColorStop(1, "rgba(78,161,255,0)");
+    bctx.beginPath(); bctx.moveTo(P2, P2 + plotH);
+    tr.forEach((p, i) => bctx.lineTo(P2 + i * stepX, y(p.thru_kops)));
+    bctx.lineTo(P2 + (tr.length - 1) * stepX, P2 + plotH); bctx.closePath(); bctx.fillStyle = grad; bctx.fill();
+    bctx.strokeStyle = "#4ea1ff"; bctx.lineWidth = 2.2; bctx.beginPath();
+    tr.forEach((p, i) => { const x = P2 + i * stepX; i ? bctx.lineTo(x, y(p.thru_kops)) : bctx.moveTo(x, y(p.thru_kops)); });
+    bctx.stroke();
+    const f = dev.final, s = dev.stalls;
+    el("beFinal").textContent = f.threads + " thr (" + f.flush + "/" + f.comp + ") · " + f.batch_mb + " MB";
+    el("beStall").textContent = s.total_sec + " s  (MT " + s.mt + " / L0 " + s.l0 + " / PS " + s.ps + ")";
+  }
+})();
